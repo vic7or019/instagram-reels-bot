@@ -8,12 +8,16 @@ from datetime import datetime
 from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
 from instaloader.exceptions import TwoFactorAuthRequiredException, ConnectionException, BadCredentialsException
 
+# Настройка путей для логов
+LOG_DIR = '/var/log/insta-bot'
+LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
+
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     handlers=[
-        logging.FileHandler('bot.log'),
+        logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
     ]
 )
