@@ -10,6 +10,7 @@ import random
 import socks
 import socket
 from pathlib import Path
+import shutil
 from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 
 # Path configuration
@@ -54,11 +55,22 @@ L = instaloader.Instaloader(
 def load_session():
     try:
         logger.info("Attempting to load Instagram session...")
-        if not Path(SESSION_FILE).exists():
-            logger.error(f"Session file not found at: {SESSION_FILE}")
+        session_file = Path(SESSION_FILE)
+        
+        if not session_file.exists():
+            logger.error(f"Session file not found at: {session_file}")
             return False
             
-        L.load_session_from_file(SESSION_FILE)
+        # Create temp session directory
+        temp_session_dir = Path('/tmp/.instaloader-ubuntu')
+        temp_session_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy session file to temp directory
+        temp_session_file = temp_session_dir / 'session-kluyev_s'
+        shutil.copy2(session_file, temp_session_file)
+        
+        # Load session
+        L.load_session('kluyev_s')
         
         # Verify session
         try:
