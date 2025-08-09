@@ -12,14 +12,9 @@ import socket
 from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 
 # Настройка путей
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(CURRENT_DIR, 'logs')
-LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
-DOWNLOADS_DIR = os.path.join(CURRENT_DIR, 'downloads')
-
-# Создание необходимых директорий
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+BASE_DIR = '/var/log/insta-bot'
+LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
+DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
 
 # Настройка логирования
 logging.basicConfig(
@@ -42,7 +37,7 @@ socks.setdefaultproxy(
 )
 socket.socket = socks.socksocket
 
-# Инициализация Instagram loader с прокси
+# Инициализация Instagram loader
 L = instaloader.Instaloader(
     download_videos=True,
     download_video_thumbnails=False,
@@ -81,7 +76,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Создаем временную директорию для этой загрузки
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(temp_dir, exist_ok=True)
+        os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
@@ -133,6 +128,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
+        # Проверяем и создаем директории если нужно
+        os.makedirs(DOWNLOADS_DIR, mode=0o755, exist_ok=True)
+        
         # Инициализируем бота
         application = Application.builder().token(BOT_TOKEN).build()
 
