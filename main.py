@@ -14,7 +14,7 @@ from config import BOT_TOKEN
 LOG_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
-SESSION_FILE = 'session-kluyev_s'
+SESSION_FILE = os.path.join(LOG_DIR, 'session-kluyev_s')
 
 # Настройка логирования
 logging.basicConfig(
