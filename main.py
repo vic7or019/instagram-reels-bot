@@ -8,9 +8,10 @@ from datetime import datetime
 from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
 from instaloader.exceptions import TwoFactorAuthRequiredException, ConnectionException, BadCredentialsException
 
-# Настройка путей для логов
+# Настройка путей
 LOG_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
+DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,10 +36,9 @@ L = instaloader.Instaloader(
 )
 is_logged_in = False
 
-# Создание временной директории
-TEMP_DIR = 'downloads'
-if not os.path.exists(TEMP_DIR):
-    os.makedirs(TEMP_DIR)
+# Создание необходимых директорий
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 def instagram_login():
     global is_logged_in
@@ -93,7 +93,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shortcode = re.search(r"/reel/([^/]+)/", message).group(1)
         
         # Создаем временную директорию для этой загрузки
-        temp_dir = f"{TEMP_DIR}/temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
@@ -108,7 +108,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         video_file = None
         for file in os.listdir(temp_dir):
             if file.endswith('.mp4'):
-                video_file = f"{temp_dir}/{file}"
+                video_file = os.path.join(temp_dir, file)
                 break
         
         if video_file:
@@ -132,9 +132,9 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         # Очищаем временные файлы
         try:
-            if 'temp_dir' in locals():
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 for file in os.listdir(temp_dir):
-                    os.remove(f"{temp_dir}/{file}")
+                    os.remove(os.path.join(temp_dir, file))
                 os.rmdir(temp_dir)
                 logger.info(f"Cleaned up temp directory: {temp_dir}")
         except Exception as e:
