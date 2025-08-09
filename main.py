@@ -11,11 +11,10 @@ from pathlib import Path
 from config import BOT_TOKEN
 
 # Настройка путей
-SES_DIR = '/home/ubuntu/instagram-reels-bot'
 LOG_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
-SESSION_FILE = os.path.join(SES_DIR, 'session-kluyev_s')
+SESSION_FILE = '/home/ubuntu/instagram-reels-bot/session-kluyev_s'
 
 # Настройка логирования
 logging.basicConfig(
