@@ -7,17 +7,15 @@ import re
 from datetime import datetime
 import time
 import random
-from pathlib import Path
-from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 import socks
 import socket
+from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 
 # Настройка путей
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(CURRENT_DIR, 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(CURRENT_DIR, 'downloads')
-SESSION_FILE = os.path.join(CURRENT_DIR, 'session-kluyev_s')
 
 # Создание необходимых директорий
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -44,7 +42,7 @@ socks.setdefaultproxy(
 )
 socket.socket = socks.socksocket
 
-# Инициализация Instagram loader
+# Инициализация Instagram loader с прокси
 L = instaloader.Instaloader(
     download_videos=True,
     download_video_thumbnails=False,
@@ -55,28 +53,6 @@ L = instaloader.Instaloader(
     post_metadata_txt_pattern='',
     user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
 )
-
-def initialize_loader():
-    try:
-        if not os.path.exists(SESSION_FILE):
-            logger.error(f"Session file not found at: {SESSION_FILE}")
-            return False
-            
-        L.load_session_from_file(SESSION_FILE)
-        logger.info("Session loaded successfully")
-        
-        # Проверка подключения
-        try:
-            test_profile = instaloader.Profile.from_username(L.context, "instagram")
-            logger.info("Instagram connection test successful")
-            return True
-        except Exception as e:
-            logger.error(f"Connection test failed: {str(e)}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Failed to load session: {str(e)}")
-        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -157,11 +133,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Инициализируем загрузчик с сохраненной сессией и прокси
-        if not initialize_loader():
-            logger.error("Failed to initialize loader")
-            return
-
         # Инициализируем бота
         application = Application.builder().token(BOT_TOKEN).build()
 
