@@ -10,14 +10,13 @@ import random
 import socks
 import socket
 from pathlib import Path
-import shutil
-from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
+from config import (BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, 
+                   PROXY_PASS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
 
 # Path configuration
 BASE_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
-SESSION_FILE = '/home/ubuntu/instagram-reels-bot/session-kluyev_s'
 
 # Configure logging
 logging.basicConfig(
@@ -52,37 +51,22 @@ L = instaloader.Instaloader(
     user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
 )
 
-def load_session():
+def initialize_instagram():
     try:
-        logger.info("Attempting to load Instagram session...")
-        session_file = Path(SESSION_FILE)
+        logger.info(f"Attempting to login to Instagram as {INSTAGRAM_USERNAME}...")
+        L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
         
-        if not session_file.exists():
-            logger.error(f"Session file not found at: {session_file}")
-            return False
-            
-        # Create temp session directory
-        temp_session_dir = Path('/tmp/.instaloader-ubuntu')
-        temp_session_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy session file to temp directory
-        temp_session_file = temp_session_dir / 'session-kluyev_s'
-        shutil.copy2(session_file, temp_session_file)
-        
-        # Load session
-        L.load_session('kluyev_s')
-        
-        # Verify session
+        # Verify login
         try:
             test_profile = instaloader.Profile.from_username(L.context, "instagram")
-            logger.info("Session loaded and verified successfully")
+            logger.info("Instagram login successful")
             return True
         except Exception as e:
-            logger.error(f"Session verification failed: {str(e)}")
+            logger.error(f"Login verification failed: {str(e)}")
             return False
             
     except Exception as e:
-        logger.error(f"Failed to load session: {str(e)}")
+        logger.error(f"Login failed: {str(e)}")
         return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,9 +150,9 @@ def main():
         # Create required directories
         os.makedirs(DOWNLOADS_DIR, mode=0o755, exist_ok=True)
         
-        # Load Instagram session
-        if not load_session():
-            logger.error("Failed to load Instagram session")
+        # Initialize Instagram with direct login
+        if not initialize_instagram():
+            logger.error("Failed to initialize Instagram")
             return
             
         # Initialize bot
