@@ -2,3 +2,6 @@ venv/
 __pycache__/
 *.pyc
 config.py
+cookies.json
+session_manager.py
+session-kluyev_s

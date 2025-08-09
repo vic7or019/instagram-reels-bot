@@ -7,13 +7,14 @@ import re
 from datetime import datetime
 import time
 import random
-from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
-from instaloader.exceptions import TwoFactorAuthRequiredException, ConnectionException, BadCredentialsException
+from pathlib import Path
+from config import BOT_TOKEN
 
 # Настройка путей
 LOG_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
+SESSION_FILE = 'session-kluyev_s'
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,42 +36,20 @@ L = instaloader.Instaloader(
     save_metadata=False,
     compress_json=False,
     post_metadata_txt_pattern='',
-    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 105.0.0.11.118 (iPhone11,8; iOS 12_3_1; en_US; en-US; scale=2.00; 828x1792; 165586599)'
+    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
 )
-is_logged_in = False
 
-# Создание необходимых директорий
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
-
-def instagram_login():
-    global is_logged_in
-    if is_logged_in:
-        return True
-        
+def initialize_loader():
     try:
-        logger.info(f"Attempting to login as {INSTAGRAM_USERNAME}")
-        L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
-        is_logged_in = True
-        logger.info("Successfully logged in to Instagram")
-        
-        # Проверка статуса логина
-        if L.context.is_logged_in:
-            logger.info("Login verification successful")
-        else:
-            logger.error("Login seems successful but verification failed")
-            is_logged_in = False
+        if not Path(SESSION_FILE).exists():
+            logger.error(f"Session file {SESSION_FILE} not found!")
+            return False
             
-        return is_logged_in
-    except TwoFactorAuthRequiredException:
-        logger.error("2FA is enabled. Please disable it for bot account")
-        return False
-    except BadCredentialsException:
-        logger.error("Invalid Instagram credentials")
-        return False
+        L.load_session_from_file(SESSION_FILE)
+        logger.info("Session loaded successfully")
+        return True
     except Exception as e:
-        logger.error(f"Login failed with detailed error: {str(e)}")
-        is_logged_in = False
+        logger.error(f"Failed to load session: {str(e)}")
         return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,7 +62,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in start command: {str(e)}")
 
 async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_logged_in
     user_id = update.effective_user.id
     message = update.message.text
     
@@ -94,11 +72,6 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Проверяем авторизацию только если не авторизованы
-        if not is_logged_in and not instagram_login():
-            await update.message.reply_text("❌ Ошибка авторизации в Instagram. Попробуйте позже.")
-            return
-
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
         # Извлекаем ID видео из URL
@@ -111,7 +84,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Created temp directory: {temp_dir}")
         
         # Добавляем случайную задержку перед запросом
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 2))
         
         # Получаем пост
         post = instaloader.Post.from_shortcode(L.context, shortcode)
@@ -137,10 +110,6 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Не удалось найти видео.")
             logger.error(f"Video file not found for user {user_id}")
 
-    except ConnectionException as ce:
-        is_logged_in = False
-        logger.error(f"Connection error: {str(ce)}")
-        await update.message.reply_text("❌ Ошибка подключения к Instagram. Попробуйте позже.")
     except Exception as e:
         error_message = f"❌ Произошла ошибка: {str(e)}"
         await update.message.reply_text(error_message)
@@ -162,9 +131,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Проверяем первичную авторизацию
-        if not instagram_login():
-            logger.error("Initial Instagram login failed")
+        # Инициализируем загрузчик с сохраненной сессией
+        if not initialize_loader():
+            logger.error("Failed to initialize loader")
             return
 
         # Инициализируем бота
