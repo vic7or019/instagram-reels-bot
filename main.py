@@ -5,6 +5,8 @@ import instaloader
 import os
 import re
 from datetime import datetime
+import time
+import random
 from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
 from instaloader.exceptions import TwoFactorAuthRequiredException, ConnectionException, BadCredentialsException
 
@@ -32,7 +34,8 @@ L = instaloader.Instaloader(
     download_comments=False,
     save_metadata=False,
     compress_json=False,
-    post_metadata_txt_pattern=''
+    post_metadata_txt_pattern='',
+    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 105.0.0.11.118 (iPhone11,8; iOS 12_3_1; en_US; en-US; scale=2.00; 828x1792; 165586599)'
 )
 is_logged_in = False
 
@@ -46,10 +49,19 @@ def instagram_login():
         return True
         
     try:
+        logger.info(f"Attempting to login as {INSTAGRAM_USERNAME}")
         L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
         is_logged_in = True
         logger.info("Successfully logged in to Instagram")
-        return True
+        
+        # Проверка статуса логина
+        if L.context.is_logged_in:
+            logger.info("Login verification successful")
+        else:
+            logger.error("Login seems successful but verification failed")
+            is_logged_in = False
+            
+        return is_logged_in
     except TwoFactorAuthRequiredException:
         logger.error("2FA is enabled. Please disable it for bot account")
         return False
@@ -57,7 +69,7 @@ def instagram_login():
         logger.error("Invalid Instagram credentials")
         return False
     except Exception as e:
-        logger.error(f"Login failed: {str(e)}")
+        logger.error(f"Login failed with detailed error: {str(e)}")
         is_logged_in = False
         return False
 
@@ -98,11 +110,16 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Created temp directory: {temp_dir}")
         
+        # Добавляем случайную задержку перед запросом
+        time.sleep(random.uniform(2, 4))
+        
         # Получаем пост
         post = instaloader.Post.from_shortcode(L.context, shortcode)
+        logger.info(f"Successfully retrieved post information for shortcode: {shortcode}")
         
         # Скачиваем видео
         L.download_post(post, target=temp_dir)
+        logger.info("Post download completed")
         
         # Находим видео файл
         video_file = None
@@ -120,10 +137,10 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Не удалось найти видео.")
             logger.error(f"Video file not found for user {user_id}")
 
-    except ConnectionException:
+    except ConnectionException as ce:
         is_logged_in = False
+        logger.error(f"Connection error: {str(ce)}")
         await update.message.reply_text("❌ Ошибка подключения к Instagram. Попробуйте позже.")
-        logger.error("Instagram connection error")
     except Exception as e:
         error_message = f"❌ Произошла ошибка: {str(e)}"
         await update.message.reply_text(error_message)
