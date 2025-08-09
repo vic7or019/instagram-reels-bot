@@ -9,14 +9,16 @@ import time
 import random
 import socks
 import socket
+from pathlib import Path
 from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 
-# Настройка путей
+# Path configuration
 BASE_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
+SESSION_FILE = '/home/ubuntu/instagram-reels-bot/session-kluyev_s'
 
-# Настройка логирования
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
@@ -27,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Настройка прокси
+# Configure proxy
 socks.setdefaultproxy(
     proxy_type=socks.PROXY_TYPE_SOCKS5,
     addr=PROXY_HOST,
@@ -37,7 +39,7 @@ socks.setdefaultproxy(
 )
 socket.socket = socks.socksocket
 
-# Инициализация Instagram loader
+# Initialize Instagram loader
 L = instaloader.Instaloader(
     download_videos=True,
     download_video_thumbnails=False,
@@ -48,6 +50,28 @@ L = instaloader.Instaloader(
     post_metadata_txt_pattern='',
     user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
 )
+
+def load_session():
+    try:
+        logger.info("Attempting to load Instagram session...")
+        if not Path(SESSION_FILE).exists():
+            logger.error(f"Session file not found at: {SESSION_FILE}")
+            return False
+            
+        L.load_session_from_file(SESSION_FILE)
+        
+        # Verify session
+        try:
+            test_profile = instaloader.Profile.from_username(L.context, "instagram")
+            logger.info("Session loaded and verified successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Session verification failed: {str(e)}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to load session: {str(e)}")
+        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -71,27 +95,27 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
-        # Извлекаем ID видео из URL
+        # Extract video ID from URL
         shortcode = re.search(r"/reel/([^/]+)/", message).group(1)
         
-        # Создаем временную директорию для этой загрузки
+        # Create temp directory
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
-        # Добавляем случайную задержку перед запросом
+        # Random delay before request
         time.sleep(random.uniform(1, 2))
         
-        # Получаем пост через прокси
+        # Get post through proxy
         post = instaloader.Post.from_shortcode(L.context, shortcode)
         logger.info(f"Successfully retrieved post information for shortcode: {shortcode}")
         
-        # Скачиваем видео
+        # Download video
         L.download_post(post, target=temp_dir)
         logger.info("Post download completed")
         
-        # Находим видео файл
+        # Find video file
         video_file = None
         for file in os.listdir(temp_dir):
             if file.endswith('.mp4'):
@@ -99,7 +123,6 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
         
         if video_file:
-            # Отправляем видео
             await update.message.reply_text("✅ Загрузка завершена, отправляю видео...")
             await update.message.reply_video(video=open(video_file, 'rb'))
             logger.info(f"Successfully sent video to user {user_id}")
@@ -113,7 +136,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error for user {user_id}: {str(e)}")
     
     finally:
-        # Очищаем временные файлы
+        # Cleanup
         try:
             if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 for file in os.listdir(temp_dir):
@@ -128,18 +151,23 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Проверяем и создаем директории если нужно
+        # Create required directories
         os.makedirs(DOWNLOADS_DIR, mode=0o755, exist_ok=True)
         
-        # Инициализируем бота
+        # Load Instagram session
+        if not load_session():
+            logger.error("Failed to load Instagram session")
+            return
+            
+        # Initialize bot
         application = Application.builder().token(BOT_TOKEN).build()
 
-        # Добавляем обработчики
+        # Add handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_reels))
         application.add_error_handler(error_handler)
 
-        # Запускаем бота
+        # Start bot
         logger.info("Bot started with proxy configuration")
         print("🤖 Бот запущен и готов к работе!")
         application.run_polling()
