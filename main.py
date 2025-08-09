@@ -8,13 +8,15 @@ from datetime import datetime
 import time
 import random
 from pathlib import Path
-from config import BOT_TOKEN
+from config import BOT_TOKEN, PROXY_URL
+import socks
+import socket
 
 # Настройка путей
 LOG_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
-SESSION_FILE = '/home/ubuntu/instagram-reels-bot/session-kluyev_s'
+SESSION_FILE = 'session-kluyev_s'
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,6 +29,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Конфигурация прокси для всех соединений
+socket.socket = socks.socksocket
+
 # Инициализация Instagram loader с настройками
 L = instaloader.Instaloader(
     download_videos=True,
@@ -36,8 +41,13 @@ L = instaloader.Instaloader(
     save_metadata=False,
     compress_json=False,
     post_metadata_txt_pattern='',
-    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
+    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15',
+    proxies={'http': PROXY_URL, 'https': PROXY_URL}
 )
+
+# Создание необходимых директорий
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 def initialize_loader():
     try:
@@ -47,7 +57,16 @@ def initialize_loader():
             
         L.load_session_from_file(SESSION_FILE)
         logger.info("Session loaded successfully")
-        return True
+        
+        # Проверка подключения через прокси
+        try:
+            test_profile = instaloader.Profile.from_username(L.context, "instagram")
+            logger.info("Proxy connection test successful")
+            return True
+        except Exception as e:
+            logger.error(f"Proxy connection test failed: {str(e)}")
+            return False
+            
     except Exception as e:
         logger.error(f"Failed to load session: {str(e)}")
         return False
@@ -86,7 +105,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Добавляем случайную задержку перед запросом
         time.sleep(random.uniform(1, 2))
         
-        # Получаем пост
+        # Получаем пост через прокси
         post = instaloader.Post.from_shortcode(L.context, shortcode)
         logger.info(f"Successfully retrieved post information for shortcode: {shortcode}")
         
@@ -131,7 +150,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Инициализируем загрузчик с сохраненной сессией
+        # Инициализируем загрузчик с сохраненной сессией и прокси
         if not initialize_loader():
             logger.error("Failed to initialize loader")
             return
@@ -145,7 +164,7 @@ def main():
         application.add_error_handler(error_handler)
 
         # Запускаем бота
-        logger.info("Bot started")
+        logger.info("Bot started with proxy configuration")
         print("🤖 Бот запущен и готов к работе!")
         application.run_polling()
 
