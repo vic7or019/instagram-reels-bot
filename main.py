@@ -8,15 +8,20 @@ from datetime import datetime
 import time
 import random
 from pathlib import Path
-from config import BOT_TOKEN, PROXY_URL
+from config import BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
 import socks
 import socket
 
 # Настройка путей
-LOG_DIR = '/var/log/insta-bot'
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(CURRENT_DIR, 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
-DOWNLOADS_DIR = os.path.join(LOG_DIR, 'downloads')
-SESSION_FILE = 'session-kluyev_s'
+DOWNLOADS_DIR = os.path.join(CURRENT_DIR, 'downloads')
+SESSION_FILE = os.path.join(CURRENT_DIR, 'session-kluyev_s')
+
+# Создание необходимых директорий
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 # Настройка логирования
 logging.basicConfig(
@@ -29,10 +34,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Конфигурация прокси для всех соединений
+# Настройка прокси
+socks.setdefaultproxy(
+    proxy_type=socks.PROXY_TYPE_SOCKS5,
+    addr=PROXY_HOST,
+    port=PROXY_PORT,
+    username=PROXY_USER,
+    password=PROXY_PASS
+)
 socket.socket = socks.socksocket
 
-# Инициализация Instagram loader с настройками
+# Инициализация Instagram loader
 L = instaloader.Instaloader(
     download_videos=True,
     download_video_thumbnails=False,
@@ -41,30 +53,25 @@ L = instaloader.Instaloader(
     save_metadata=False,
     compress_json=False,
     post_metadata_txt_pattern='',
-    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15',
-    proxies={'http': PROXY_URL, 'https': PROXY_URL}
+    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
 )
-
-# Создание необходимых директорий
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 def initialize_loader():
     try:
-        if not Path(SESSION_FILE).exists():
-            logger.error(f"Session file {SESSION_FILE} not found!")
+        if not os.path.exists(SESSION_FILE):
+            logger.error(f"Session file not found at: {SESSION_FILE}")
             return False
             
         L.load_session_from_file(SESSION_FILE)
         logger.info("Session loaded successfully")
         
-        # Проверка подключения через прокси
+        # Проверка подключения
         try:
             test_profile = instaloader.Profile.from_username(L.context, "instagram")
-            logger.info("Proxy connection test successful")
+            logger.info("Instagram connection test successful")
             return True
         except Exception as e:
-            logger.error(f"Proxy connection test failed: {str(e)}")
+            logger.error(f"Connection test failed: {str(e)}")
             return False
             
     except Exception as e:
