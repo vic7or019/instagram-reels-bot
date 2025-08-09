@@ -5,23 +5,57 @@ import instaloader
 import os
 import re
 from datetime import datetime
-from config import BOT_TOKEN
+from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
+from instaloader.exceptions import TwoFactorAuthRequiredException, ConnectionException, BadCredentialsException
 
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    filename='bot.log'
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
-# Инициализация Instagram loader
-L = instaloader.Instaloader()
+# Инициализация Instagram loader с настройками
+L = instaloader.Instaloader(
+    download_videos=True,
+    download_video_thumbnails=False,
+    download_geotags=False,
+    download_comments=False,
+    save_metadata=False,
+    compress_json=False,
+    post_metadata_txt_pattern=''
+)
+is_logged_in = False
 
 # Создание временной директории
 TEMP_DIR = 'downloads'
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
+
+def instagram_login():
+    global is_logged_in
+    if is_logged_in:
+        return True
+        
+    try:
+        L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+        is_logged_in = True
+        logger.info("Successfully logged in to Instagram")
+        return True
+    except TwoFactorAuthRequiredException:
+        logger.error("2FA is enabled. Please disable it for bot account")
+        return False
+    except BadCredentialsException:
+        logger.error("Invalid Instagram credentials")
+        return False
+    except Exception as e:
+        logger.error(f"Login failed: {str(e)}")
+        is_logged_in = False
+        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -33,6 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in start command: {str(e)}")
 
 async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global is_logged_in
     user_id = update.effective_user.id
     message = update.message.text
     
@@ -43,12 +78,17 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # Проверяем авторизацию только если не авторизованы
+        if not is_logged_in and not instagram_login():
+            await update.message.reply_text("❌ Ошибка авторизации в Instagram. Попробуйте позже.")
+            return
+
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
         # Извлекаем ID видео из URL
         shortcode = re.search(r"/reel/([^/]+)/", message).group(1)
         
-        # Создаем временную директорию для этого загрузки
+        # Создаем временную директорию для этой загрузки
         temp_dir = f"{TEMP_DIR}/temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         os.makedirs(temp_dir, exist_ok=True)
         
@@ -76,6 +116,10 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Не удалось найти видео.")
             logger.error(f"Video file not found for user {user_id}")
 
+    except ConnectionException:
+        is_logged_in = False
+        await update.message.reply_text("❌ Ошибка подключения к Instagram. Попробуйте позже.")
+        logger.error("Instagram connection error")
     except Exception as e:
         error_message = f"❌ Произошла ошибка: {str(e)}"
         await update.message.reply_text(error_message)
@@ -97,6 +141,11 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
+        # Проверяем первичную авторизацию
+        if not instagram_login():
+            logger.error("Initial Instagram login failed")
+            return
+
         # Инициализируем бота
         application = Application.builder().token(BOT_TOKEN).build()
 
