@@ -1,6 +1,6 @@
 import logging
 import sys
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 import re
@@ -10,6 +10,9 @@ import random
 import yt_dlp
 from pathlib import Path
 from config import BOT_TOKEN, PROXY_URL
+
+# Добавляем ID канала
+CHANNEL_ID = "@zabugor_pay"
 
 # Конфигурация путей
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,8 +68,40 @@ def download_reel(url, output_path):
         logger.error(f"Download error: {str(e)}")
         raise
 
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Проверка подписки пользователя на канал"""
+    try:
+        user_id = update.effective_user.id
+        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        
+        # Список статусов, которые считаются "подписанным"
+        member_statuses = ['member', 'administrator', 'creator']
+        
+        if chat_member.status not in member_statuses:
+            keyboard = [[InlineKeyboardButton("📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_ID[1:]}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "⚠️ Для использования бота необходимо подписаться на канал\n"
+                "После подписки повторите попытку.",
+                reply_markup=reply_markup
+            )
+            logger.info(f"User {user_id} is not subscribed to the channel")
+            return False
+            
+        logger.info(f"User {user_id} subscription verified")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error checking subscription: {str(e)}")
+        return False
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        # Проверяем подписку при старте
+        if not await check_subscription(update, context):
+            return
+            
         await update.message.reply_text(
             "👋 Привет! Отправь мне ссылку на Reels из Instagram, и я скачаю его для тебя."
         )
@@ -75,6 +110,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in start command: {str(e)}")
 
 async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Проверяем подписку перед скачиванием
+    if not await check_subscription(update, context):
+        return
+        
     user_id = update.effective_user.id
     message = update.message.text
     
