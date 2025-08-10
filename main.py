@@ -68,75 +68,36 @@ def download_reel(url, output_path):
         logger.error(f"Download error: {str(e)}")
         raise
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
-    keyboard = [[InlineKeyboardButton("📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_ID[1:]}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    try:
-        user_id = update.effective_user.id
-        
-        try:
-            # Проверяем подписку
-            chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-            
-            if chat_member.status in ['member', 'administrator', 'creator']:
-                await update.message.reply_text(
-                    "👋 Привет! Отправь мне ссылку на Reels из Instagram, и я скачаю его для тебя."
-                )
-                logger.info(f"Start command used by user {user_id} - subscription verified")
-            else:
-                await update.message.reply_text(
-                    "👋 Привет! Для использования бота необходимо подписаться на канал.\n"
-                    "Нажми на кнопку ниже, подпишись и возвращайся!",
-                    reply_markup=reply_markup
-                )
-                logger.info(f"User {user_id} is not subscribed to the channel")
-        
-        except Exception as e:
-            # Если возникла ошибка при проверке подписки
-            logger.error(f"Error checking subscription for user {user_id}: {str(e)}")
-            await update.message.reply_text(
-                "👋 Привет! Для использования бота необходимо подписаться на канал.\n"
-                "Нажми на кнопку ниже, подпишись и возвращайся!",
-                reply_markup=reply_markup
-            )
-            
-    except Exception as e:
-        logger.error(f"Critical error in start command: {str(e)}")
-        await update.message.reply_text(
-            "Произошла ошибка. Пожалуйста, попробуйте позже."
-        )
-
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Проверка подписки пользователя на канал"""
-    keyboard = [[InlineKeyboardButton("📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_ID[1:]}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     try:
         user_id = update.effective_user.id
         chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
         
         if chat_member.status in ['member', 'administrator', 'creator']:
-            logger.info(f"User {user_id} subscription verified")
             return True
             
         await update.message.reply_text(
-            "⚠️ Для использования бота необходимо подписаться на канал\n"
-            "После подписки повторите попытку.",
-            reply_markup=reply_markup
+            "Для того чтобы скачивать видео подпишитесь на канал @zabugor_pay"
         )
-        logger.info(f"User {user_id} is not subscribed to the channel")
         return False
         
     except Exception as e:
         logger.error(f"Error checking subscription: {str(e)}")
         await update.message.reply_text(
-            "⚠️ Для использования бота необходимо подписаться на канал\n"
-            "После подписки повторите попытку.",
-            reply_markup=reply_markup
+            "Для того чтобы скачивать видео подпишитесь на канал @zabugor_pay"
         )
         return False
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start"""
+    if not await check_subscription(update, context):
+        return
+        
+    await update.message.reply_text(
+        "👋 Привет! Отправь мне ссылку на Reels из Instagram, и я скачаю его для тебя."
+    )
+    logger.info(f"Start command used by user {update.effective_user.id}")
 
 async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем подписку перед скачиванием
