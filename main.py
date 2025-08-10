@@ -11,18 +11,20 @@ import yt_dlp
 from pathlib import Path
 from config import BOT_TOKEN, PROXY_URL
 
-# Path configuration
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
+# Конфигурация путей
+BASE_DIR = '/var/log/insta-bot'
+LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
-COOKIES_FILE = os.path.join(BASE_DIR, 'cookies.txt')
+COOKIES_FILE = '/home/ubuntu/instagram-reels-bot/cookies.txt'
 
-# Create directories
-for directory in [LOG_DIR, DOWNLOADS_DIR]:
-    os.makedirs(directory, exist_ok=True)
+# Создание директорий с правильными разрешениями
+for directory in [BASE_DIR, DOWNLOADS_DIR]:
+    try:
+        os.makedirs(directory, mode=0o777, exist_ok=True)
+    except Exception as e:
+        print(f"Error creating directory {directory}: {str(e)}")
 
-# Configure logging
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -45,15 +47,15 @@ def download_reel(url, output_path):
         'nocheckcertificate': True,
         'ignoreerrors': False,
         'no_color': True,
-        'cookiesfrombrowser': ('chrome',),  # Try to get cookies from Chrome first
-        'cookiefile': COOKIES_FILE  # Fallback to cookies.txt
+        'cookiesfrombrowser': ('chrome',),
+        'cookiefile': COOKIES_FILE
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             result = ydl.download([url])
             
-            # Find downloaded video file
+            # Поиск скачанного видео файла
             video_file = None
             for file in os.listdir(output_path):
                 if file.endswith('.mp4'):
@@ -89,7 +91,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(temp_dir, exist_ok=True)
+        os.makedirs(temp_dir, mode=0o777, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
@@ -109,7 +111,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error for user {user_id}: {str(e)}")
     
     finally:
-        # Cleanup
+        # Очистка
         try:
             if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 for file in os.listdir(temp_dir):
@@ -124,7 +126,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Check if cookies file exists
+        # Проверка наличия файла cookies
         if not os.path.exists(COOKIES_FILE):
             logger.error(f"Cookies file not found: {COOKIES_FILE}")
             raise FileNotFoundError("Cookies file is required for Instagram downloads")
