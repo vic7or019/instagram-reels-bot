@@ -1,24 +1,21 @@
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import instaloader
+from instagrapi import Client
 import os
 import re
 from datetime import datetime
 import time
 import random
-import socks
-import socket
 from pathlib import Path
-from config import (BOT_TOKEN, PROXY_HOST, PROXY_PORT, PROXY_USER, 
-                   PROXY_PASS, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD, PROXY_URL
 
-# Path configuration
+# Настройка путей
 BASE_DIR = '/var/log/insta-bot'
 LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
 
-# Configure logging
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
@@ -29,36 +26,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configure proxy
-socks.setdefaultproxy(
-    proxy_type=socks.PROXY_TYPE_SOCKS5,
-    addr=PROXY_HOST,
-    port=PROXY_PORT,
-    username=PROXY_USER,
-    password=PROXY_PASS
-)
-socket.socket = socks.socksocket
-
-# Initialize Instagram loader
-L = instaloader.Instaloader(
-    download_videos=True,
-    download_video_thumbnails=False,
-    download_geotags=False,
-    download_comments=False,
-    save_metadata=False,
-    compress_json=False,
-    post_metadata_txt_pattern='',
-    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 12_3_1 like Mac OS X) AppleWebKit/605.1.15'
-)
+# Инициализация Instagram клиента
+cl = Client()
+cl.set_proxy(PROXY_URL)
+cl.set_device_settings('samsung_galaxy_s10')
 
 def initialize_instagram():
     try:
         logger.info(f"Attempting to login to Instagram as {INSTAGRAM_USERNAME}...")
-        L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+        cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
         
-        # Verify login
+        # Проверяем логин
         try:
-            test_profile = instaloader.Profile.from_username(L.context, "instagram")
+            user_id = cl.user_id_from_username("instagram")
             logger.info("Instagram login successful")
             return True
         except Exception as e:
@@ -91,40 +71,29 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
-        # Extract video ID from URL
-        shortcode = re.search(r"/reel/([^/]+)/", message).group(1)
+        # Извлекаем media_pk из URL
+        media_pk = cl.media_pk_from_url(message)
         
-        # Create temp directory
+        # Создаем временную директорию
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
-        # Random delay before request
+        # Случайная задержка перед запросом
         time.sleep(random.uniform(1, 2))
         
-        # Get post through proxy
-        post = instaloader.Post.from_shortcode(L.context, shortcode)
-        logger.info(f"Successfully retrieved post information for shortcode: {shortcode}")
+        # Скачиваем видео
+        video_path = cl.clip_download(media_pk, folder=temp_dir)
+        logger.info("Video download completed")
         
-        # Download video
-        L.download_post(post, target=temp_dir)
-        logger.info("Post download completed")
-        
-        # Find video file
-        video_file = None
-        for file in os.listdir(temp_dir):
-            if file.endswith('.mp4'):
-                video_file = os.path.join(temp_dir, file)
-                break
-        
-        if video_file:
+        if video_path and os.path.exists(video_path):
             await update.message.reply_text("✅ Загрузка завершена, отправляю видео...")
-            await update.message.reply_video(video=open(video_file, 'rb'))
+            await update.message.reply_video(video=open(video_path, 'rb'))
             logger.info(f"Successfully sent video to user {user_id}")
         else:
             await update.message.reply_text("❌ Не удалось найти видео.")
-            logger.error(f"Video file not found for user {user_id}")
+            logger.error(f"Video file not found")
 
     except Exception as e:
         error_message = f"❌ Произошла ошибка: {str(e)}"
@@ -132,7 +101,7 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error for user {user_id}: {str(e)}")
     
     finally:
-        # Cleanup
+        # Очистка
         try:
             if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 for file in os.listdir(temp_dir):
@@ -147,24 +116,24 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Create required directories
+        # Создаем необходимые директории
         os.makedirs(DOWNLOADS_DIR, mode=0o755, exist_ok=True)
         
-        # Initialize Instagram with direct login
+        # Инициализируем Instagram
         if not initialize_instagram():
             logger.error("Failed to initialize Instagram")
             return
             
-        # Initialize bot
+        # Инициализируем бота
         application = Application.builder().token(BOT_TOKEN).build()
 
-        # Add handlers
+        # Добавляем обработчики
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_reels))
         application.add_error_handler(error_handler)
 
-        # Start bot
-        logger.info("Bot started with proxy configuration")
+        # Запускаем бота
+        logger.info("Bot started with Instagram API")
         print("🤖 Бот запущен и готов к работе!")
         application.run_polling()
 
