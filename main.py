@@ -53,7 +53,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def download_video(url, output_path, is_youtube=False):
     """Download video using yt-dlp"""
     ydl_opts = {
-        'format': 'best' if is_youtube else None,
+        'format': 'best',
         'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
         'proxy': PROXY_URL,
         'quiet': True,
@@ -64,7 +64,24 @@ def download_video(url, output_path, is_youtube=False):
         'no_color': True,
     }
     
-    if not is_youtube:
+    if is_youtube:
+        # Добавляем специальные настройки для YouTube
+        ydl_opts.update({
+            'format': 'best',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            },
+            'cookiefile': 'youtube_cookies.txt'  # Добавляем файл с куками для YouTube
+        })
+    else:
+        # Настройки для Instagram остаются прежними
         ydl_opts['cookiefile'] = COOKIES_FILE
     
     try:
