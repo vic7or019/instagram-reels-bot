@@ -1,8 +1,4 @@
 python-telegram-bot==20.7
-instaloader==4.10.2
-python-dotenv==1.0.0
+yt-dlp==2023.12.30
 PySocks==1.7.1
-instagrapi==2.0.0
-Pillow>=8.1.1
-instascrape
-helpers
+requests==2.31.0
