@@ -11,16 +11,20 @@ import yt_dlp
 from pathlib import Path
 from config import BOT_TOKEN, PROXY_URL
 
-# Конфигурация путей
-BASE_DIR = '/var/log/insta-bot'
+# Используем домашнюю директорию пользователя ubuntu
+HOME_DIR = '/home/ubuntu/instagram-reels-bot'
+BASE_DIR = os.path.join(HOME_DIR, 'data')
 LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
-COOKIES_FILE = '/home/ubuntu/instagram-reels-bot/cookies.txt'
+COOKIES_FILE = os.path.join(HOME_DIR, 'cookies.txt')
 
-# Создание директорий с правильными разрешениями
+# Создаем директории с корректными правами
 for directory in [BASE_DIR, DOWNLOADS_DIR]:
     try:
-        os.makedirs(directory, mode=0o777, exist_ok=True)
+        if not os.path.exists(directory):
+            os.makedirs(directory, mode=0o755)
+            # Явно устанавливаем владельца
+            os.chown(directory, os.getuid(), os.getgid())
     except Exception as e:
         print(f"Error creating directory {directory}: {str(e)}")
 
