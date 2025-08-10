@@ -52,54 +52,50 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def download_video(url, output_path, is_youtube=False):
     """Download video using yt-dlp"""
+    logger.info(f"Starting download: URL={url}, is_youtube={is_youtube}")
+    
     ydl_opts = {
-        'format': 'best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' if is_youtube else 'best',
         'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
         'proxy': PROXY_URL,
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': True,
+        'quiet': False,  # Enable output for debugging
+        'no_warnings': False,  # Show warnings
+        'verbose': True,  # More detailed output
         'nocheckcertificate': True,
         'ignoreerrors': False,
         'no_color': True,
+        'merge_output_format': 'mp4',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+        }
     }
-    
-    if is_youtube:
-        # Добавляем специальные настройки для YouTube
-        ydl_opts.update({
-            'format': 'best',
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            }],
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            },
-            'cookiefile': 'youtube_cookies.txt'  # Добавляем файл с куками для YouTube
-        })
-    else:
-        # Настройки для Instagram остаются прежними
+
+    if not is_youtube:
         ydl_opts['cookiefile'] = COOKIES_FILE
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info("Starting download with yt-dlp...")
             result = ydl.download([url])
+            logger.info(f"Download result: {result}")
             
             # Find downloaded video file
-            video_file = None
-            for file in os.listdir(output_path):
-                if file.endswith(('.mp4', '.mkv')):
-                    video_file = os.path.join(output_path, file)
-                    break
-                    
-            return video_file
+            video_files = [f for f in os.listdir(output_path) if f.endswith(('.mp4', '.mkv'))]
+            logger.info(f"Files in directory: {video_files}")
+            
+            if video_files:
+                video_file = os.path.join(output_path, video_files[0])
+                logger.info(f"Found video file: {video_file}")
+                return video_file
+            else:
+                logger.error("No video files found in output directory")
+                return None
             
     except Exception as e:
         logger.error(f"Download error: {str(e)}")
-        raise
+        raise Exception(f"Ошибка при скачивании: {str(e)}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -115,7 +111,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Start command used by user {update.effective_user.id}")
 
 async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ссылок на видео"""
+    """Video link handler"""
     if not await check_subscription(update, context):
         return
         
@@ -130,7 +126,7 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not (is_youtube or is_instagram):
         await update.message.reply_text(
-            "❌ Пожалуйста, отправьте корректную ссылку на видео из YouTube или Instagram Reels."
+            "❌ Отправьте корректную ссылку на видео из YouTube или Instagram Reels."
         )
         return
 
@@ -138,35 +134,41 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Начинаю загрузку видео...")
         
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(temp_dir, exist_ok=True)
+        os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
         video_path = download_video(message, temp_dir, is_youtube)
         
         if video_path and os.path.exists(video_path):
+            file_size = os.path.getsize(video_path) / (1024 * 1024)  # Size in MB
+            logger.info(f"Video file size: {file_size:.2f}MB")
+            
+            if file_size > 50:
+                await update.message.reply_text("❌ Видео слишком большое (>50MB)")
+                return
+                
             await update.message.reply_text("✅ Загрузка завершена, отправляю видео...")
             await update.message.reply_video(video=open(video_path, 'rb'))
             logger.info(f"Successfully sent video to user {user_id}")
         else:
             await update.message.reply_text("❌ Не удалось скачать видео.")
-            logger.error(f"Video file not found")
+            logger.error("Video file not found or empty")
 
     except Exception as e:
-        error_message = f"❌ Произошла ошибка: {str(e)}"
+        error_message = f"❌ Ошибка: {str(e)}"
         await update.message.reply_text(error_message)
         logger.error(f"Error for user {user_id}: {str(e)}")
     
     finally:
-        # Cleanup
-        try:
-            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            try:
                 for file in os.listdir(temp_dir):
                     os.remove(os.path.join(temp_dir, file))
                 os.rmdir(temp_dir)
                 logger.info(f"Cleaned up temp directory: {temp_dir}")
-        except Exception as e:
-            logger.error(f"Error cleaning up: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error cleaning up: {str(e)}")
 
 def main():
     try:
