@@ -2,7 +2,6 @@ import logging
 import sys
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from instascrape import Reel
 import os
 import re
 from datetime import datetime
@@ -10,6 +9,7 @@ import time
 import random
 from pathlib import Path
 import requests
+from bs4 import BeautifulSoup
 from config import BOT_TOKEN, PROXY_URL
 
 # Path configuration
@@ -43,6 +43,33 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
+def get_video_url(url):
+    """Extract video URL from Instagram Reel page"""
+    try:
+        proxies = {
+            'http': PROXY_URL,
+            'https': PROXY_URL
+        }
+        
+        response = requests.get(url, headers=HEADERS, proxies=proxies)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Ищем мета-тег с URL видео
+        video_url = None
+        for meta in soup.find_all('meta', {'property': 'og:video'}):
+            video_url = meta.get('content')
+            if video_url:
+                break
+                
+        if not video_url:
+            raise Exception("Video URL not found")
+            
+        return video_url
+        
+    except Exception as e:
+        logger.error(f"Error extracting video URL: {str(e)}")
+        raise
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text(
@@ -69,12 +96,9 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
-        # Download video
-        reel = Reel(message)
-        reel.scrape(headers=HEADERS)
-        video_url = reel.video_url
+        # Get video URL and download
+        video_url = get_video_url(message)
         
-        # Download through proxy
         proxies = {
             'http': PROXY_URL,
             'https': PROXY_URL

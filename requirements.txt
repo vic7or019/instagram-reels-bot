@@ -4,4 +4,5 @@ python-dotenv==1.0.0
 PySocks==1.7.1
 instagrapi==2.0.0
 Pillow>=8.1.1
-instascrape==0.3.0
+instascrape
+helpers
