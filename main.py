@@ -54,7 +54,13 @@ cl.device_settings = {
 def initialize_instagram():
     try:
         logger.info(f"Attempting to login to Instagram as {INSTAGRAM_USERNAME}...")
-        cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+        
+        # Настраиваем обработку двухфакторной аутентификации
+        cl.login(
+            INSTAGRAM_USERNAME,
+            INSTAGRAM_PASSWORD,
+            verification_code=input("Enter 2FA code from Google Authenticator: ")
+        )
         
         try:
             user_id = cl.user_id_from_username("instagram")
@@ -63,6 +69,10 @@ def initialize_instagram():
         except Exception as e:
             logger.error(f"Login verification failed: {str(e)}")
             return False
+            
+    except Exception as e:
+        logger.error(f"Login failed: {str(e)}")
+        return False
             
     except Exception as e:
         logger.error(f"Login failed: {str(e)}")
