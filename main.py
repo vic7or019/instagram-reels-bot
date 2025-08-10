@@ -97,6 +97,48 @@ def download_video(url, output_path, is_youtube=False):
         logger.error(f"Download error: {str(e)}")
         raise Exception(f"Ошибка при скачивании: {str(e)}")
 
+def download_youtube(url, output_path):
+    """Специальная функция для скачивания с YouTube"""
+    ydl_opts = {
+        'format': 'best[height<=720]',  # Ограничиваем качество для уменьшения размера
+        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'proxy': PROXY_URL,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'extractor_args': {
+            'youtube': {
+                'skip_webpage': True,  # Пропускаем загрузку веб-страницы
+                'player_skip': ['webpage', 'config', 'js'],  # Пропускаем дополнительные запросы
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info("Starting YouTube download...")
+            info = ydl.extract_info(url, download=False)  # Сначала получаем информацию
+            
+            if info.get('duration', 0) > 600:  # 10 минут
+                raise Exception("Видео длиннее 10 минут")
+                
+            result = ydl.download([url])
+            
+            # Ищем скачанный файл
+            video_files = [f for f in os.listdir(output_path) if f.endswith('.mp4')]
+            if video_files:
+                return os.path.join(output_path, video_files[0])
+            
+            return None
+            
+    except Exception as e:
+        logger.error(f"YouTube download error: {str(e)}")
+        raise
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     if not await check_subscription(update, context):
@@ -111,7 +153,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Start command used by user {update.effective_user.id}")
 
 async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Video link handler"""
+    """Обработчик ссылок на видео"""
     if not await check_subscription(update, context):
         return
         
@@ -120,7 +162,7 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"Received request from user {user_id}: {message}")
     
-    # Check URL type
+    # Проверяем тип URL
     is_youtube = "youtube.com" in message or "youtu.be" in message
     is_instagram = "instagram.com/reel" in message
     
@@ -134,16 +176,18 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Начинаю загрузку видео...")
         
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(temp_dir, mode=0o755, exist_ok=True)
+        os.makedirs(temp_dir, exist_ok=True)
         
         logger.info(f"Created temp directory: {temp_dir}")
         
-        video_path = download_video(message, temp_dir, is_youtube)
+        # Используем разные функции для YouTube и Instagram
+        if is_youtube:
+            video_path = download_youtube(message, temp_dir)
+        else:
+            video_path = download_video(message, temp_dir, False)
         
         if video_path and os.path.exists(video_path):
-            file_size = os.path.getsize(video_path) / (1024 * 1024)  # Size in MB
-            logger.info(f"Video file size: {file_size:.2f}MB")
-            
+            file_size = os.path.getsize(video_path) / (1024 * 1024)
             if file_size > 50:
                 await update.message.reply_text("❌ Видео слишком большое (>50MB)")
                 return
@@ -161,14 +205,14 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error for user {user_id}: {str(e)}")
     
     finally:
-        if 'temp_dir' in locals() and os.path.exists(temp_dir):
-            try:
+        try:
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 for file in os.listdir(temp_dir):
                     os.remove(os.path.join(temp_dir, file))
                 os.rmdir(temp_dir)
                 logger.info(f"Cleaned up temp directory: {temp_dir}")
-            except Exception as e:
-                logger.error(f"Error cleaning up: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error cleaning up: {str(e)}")
 
 def main():
     try:
