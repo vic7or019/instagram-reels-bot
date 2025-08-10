@@ -51,7 +51,7 @@ def download_reel(url, output_path):
         'nocheckcertificate': True,
         'ignoreerrors': False,
         'no_color': True,
-        'cookiesfrombrowser': ('chrome',),
+        # Remove cookiesfrombrowser option and use only cookiefile
         'cookiefile': COOKIES_FILE
     }
     
