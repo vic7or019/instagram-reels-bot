@@ -2,3 +2,4 @@ python-telegram-bot==20.7
 yt-dlp==2023.12.30
 PySocks==1.7.1
 requests==2.31.0
+pytube==15.0.0

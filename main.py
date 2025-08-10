@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 from datetime import datetime
-import yt_dlp
+from pytube import YouTube
 from config import BOT_TOKEN, PROXY_URL, CHANNEL_ID
 
 # Path configuration
@@ -98,46 +98,30 @@ def download_video(url, output_path, is_youtube=False):
         raise Exception(f"Ошибка при скачивании: {str(e)}")
 
 def download_youtube(url, output_path):
-    """Специальная функция для скачивания с YouTube"""
-    ydl_opts = {
-        'format': 'best[height<=720]',  # Ограничиваем качество для уменьшения размера
-        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-        'proxy': PROXY_URL,
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'extractor_args': {
-            'youtube': {
-                'skip_webpage': True,  # Пропускаем загрузку веб-страницы
-                'player_skip': ['webpage', 'config', 'js'],  # Пропускаем дополнительные запросы
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-            'Accept-Language': 'en-US,en;q=0.5',
-        }
-    }
-    
+    """Download video from YouTube using pytube"""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            logger.info("Starting YouTube download...")
-            info = ydl.extract_info(url, download=False)  # Сначала получаем информацию
+        logger.info(f"Starting YouTube download: {url}")
+        yt = YouTube(url)
+        
+        # Проверяем длительность
+        if yt.length > 600:  # 10 минут
+            raise Exception("Видео длиннее 10 минут")
             
-            if info.get('duration', 0) > 600:  # 10 минут
-                raise Exception("Видео длиннее 10 минут")
-                
-            result = ydl.download([url])
+        # Выбираем поток с оптимальным разрешением (720p или меньше)
+        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+        
+        if not stream:
+            raise Exception("Не найден подходящий формат видео")
             
-            # Ищем скачанный файл
-            video_files = [f for f in os.listdir(output_path) if f.endswith('.mp4')]
-            if video_files:
-                return os.path.join(output_path, video_files[0])
-            
-            return None
-            
+        # Скачиваем видео
+        video_path = stream.download(output_path=output_path)
+        logger.info(f"YouTube download completed: {video_path}")
+        
+        return video_path
+        
     except Exception as e:
         logger.error(f"YouTube download error: {str(e)}")
-        raise
+        raise Exception(f"Ошибка при скачивании с YouTube: {str(e)}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -180,14 +164,13 @@ async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Created temp directory: {temp_dir}")
         
-        # Используем разные функции для YouTube и Instagram
         if is_youtube:
             video_path = download_youtube(message, temp_dir)
         else:
             video_path = download_video(message, temp_dir, False)
         
         if video_path and os.path.exists(video_path):
-            file_size = os.path.getsize(video_path) / (1024 * 1024)
+            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
             if file_size > 50:
                 await update.message.reply_text("❌ Видео слишком большое (>50MB)")
                 return
