@@ -38,7 +38,18 @@ logger.info("Bot starting up...")
 # Initialize Instagram client
 cl = Client()
 cl.set_proxy(PROXY_URL)
-cl.set_device_settings('samsung_galaxy_s10')
+cl.device_settings = {
+    'app_version': '269.0.0.18.75',
+    'android_version': 29,
+    'android_release': '10.0',
+    'dpi': '420dpi',
+    'resolution': '1080x2340',
+    'manufacturer': 'samsung',
+    'device': 'SM-G973F',
+    'model': 'beyond1',
+    'cpu': 'exynos9820',
+    'version_code': '314665256'
+}
 
 def initialize_instagram():
     try:
