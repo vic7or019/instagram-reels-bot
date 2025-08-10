@@ -13,14 +13,17 @@ from bs4 import BeautifulSoup
 from config import BOT_TOKEN, PROXY_URL
 
 # Path configuration
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
+BASE_DIR = '/var/log/insta-bot'
+LOG_FILE = os.path.join(BASE_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
 
-# Create directories
-os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+# Create directories with proper permissions
+for directory in [BASE_DIR, DOWNLOADS_DIR]:
+    try:
+        os.makedirs(directory, mode=0o755, exist_ok=True)
+        os.chmod(directory, 0o755)
+    except Exception as e:
+        print(f"Error creating directory {directory}: {str(e)}")
 
 # Configure logging
 logging.basicConfig(
@@ -54,7 +57,7 @@ def get_video_url(url):
         response = requests.get(url, headers=HEADERS, proxies=proxies)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Ищем мета-тег с URL видео
+        # Look for video URL in meta tags
         video_url = None
         for meta in soup.find_all('meta', {'property': 'og:video'}):
             video_url = meta.get('content')
@@ -92,11 +95,11 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
-        # Create temp directory
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
-        # Get video URL and download
+        logger.info(f"Created temp directory: {temp_dir}")
+        
         video_url = get_video_url(message)
         
         proxies = {
@@ -139,15 +142,12 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Initialize bot
         application = Application.builder().token(BOT_TOKEN).build()
 
-        # Add handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_reels))
         application.add_error_handler(error_handler)
 
-        # Start bot
         logger.info("Bot started")
         print("🤖 Бот запущен и готов к работе!")
         application.run_polling()
