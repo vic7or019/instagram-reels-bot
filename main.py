@@ -7,8 +7,7 @@ import re
 from datetime import datetime
 import time
 import random
-import json
-import requests
+import yt_dlp
 from pathlib import Path
 from config import BOT_TOKEN, PROXY_URL
 
@@ -36,77 +35,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Headers for Instagram requests
-HEADERS = {
-    "User-Agent": "Instagram 219.0.0.12.117 Android",
-    "Accept": "*/*",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Origin": "https://www.instagram.com",
-    "Connection": "keep-alive",
-    "Referer": "https://www.instagram.com/",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
-    "X-IG-App-ID": "936619743392459",
-    "X-IG-WWW-Claim": "0",
-    "X-Requested-With": "XMLHttpRequest"
-}
-
-def get_video_url(url):
-    """Extract video URL from Instagram Reel using multiple methods"""
+def download_reel(url, output_path):
+    """Download Instagram Reel using yt-dlp"""
+    ydl_opts = {
+        'format': 'best',
+        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'proxy': PROXY_URL,
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': True,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'no_color': True,
+    }
+    
     try:
-        # Extract shortcode from URL
-        shortcode = re.search(r'/reel/([^/?]+)', url).group(1)
-        logger.info(f"Extracted shortcode: {shortcode}")
-        
-        proxies = {
-            'http': PROXY_URL,
-            'https': PROXY_URL
-        }
-        
-        # Try different methods to get video URL
-        methods = [
-            {
-                'url': f"https://www.instagram.com/graphql/query/?query_hash=b3055c01b4b222b8a47dc12b090e4e64&variables={{\"shortcode\":\"{shortcode}\"}}",
-                'path': ['data', 'shortcode_media', 'video_url']
-            },
-            {
-                'url': f"https://www.instagram.com/reel/{shortcode}/?__a=1&__d=dis",
-                'path': ['items', 0, 'video_versions', 0, 'url']
-            },
-            {
-                'url': f"https://www.instagram.com/api/v1/media/{shortcode}/info/",
-                'path': ['items', 0, 'video_versions', 0, 'url']
-            }
-        ]
-        
-        for method in methods:
-            try:
-                response = requests.get(
-                    method['url'], 
-                    headers=HEADERS, 
-                    proxies=proxies,
-                    timeout=10
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # Navigate through JSON path
-                    result = data
-                    for key in method['path']:
-                        result = result[key] if isinstance(key, str) else result[key]
-                    if result and isinstance(result, str):
-                        logger.info(f"Successfully found video URL using method: {method['url']}")
-                        return result
-            except Exception as e:
-                logger.warning(f"Method failed {method['url']}: {str(e)}")
-                continue
-        
-        raise Exception("Не удалось получить URL видео ни одним из методов")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            result = ydl.download([url])
+            
+            # Find downloaded video file
+            video_file = None
+            for file in os.listdir(output_path):
+                if file.endswith('.mp4'):
+                    video_file = os.path.join(output_path, file)
+                    break
+                    
+            return video_file
             
     except Exception as e:
-        logger.error(f"Error extracting video URL: {str(e)}")
+        logger.error(f"Download error: {str(e)}")
         raise
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,47 +93,15 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Created temp directory: {temp_dir}")
         
-        # Get video URL with retries
-        max_retries = 3
-        retry_count = 0
-        while retry_count < max_retries:
-            try:
-                video_url = get_video_url(message)
-                break
-            except Exception as e:
-                retry_count += 1
-                if retry_count == max_retries:
-                    raise
-                time.sleep(random.uniform(1, 3))
+        video_path = download_reel(message, temp_dir)
         
-        proxies = {
-            'http': PROXY_URL,
-            'https': PROXY_URL
-        }
-        
-        # Download video with timeout and chunk size
-        response = requests.get(
-            video_url, 
-            headers=HEADERS, 
-            proxies=proxies, 
-            stream=True,
-            timeout=30
-        )
-        
-        video_path = os.path.join(temp_dir, "reel.mp4")
-        
-        with open(video_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+        if video_path and os.path.exists(video_path):
             await update.message.reply_text("✅ Загрузка завершена, отправляю видео...")
             await update.message.reply_video(video=open(video_path, 'rb'))
             logger.info(f"Successfully sent video to user {user_id}")
         else:
             await update.message.reply_text("❌ Не удалось скачать видео.")
-            logger.error(f"Video file is empty or not found")
+            logger.error(f"Video file not found")
 
     except Exception as e:
         error_message = f"❌ Произошла ошибка: {str(e)}"
