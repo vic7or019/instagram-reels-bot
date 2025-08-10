@@ -2,14 +2,15 @@ import logging
 import sys
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from instagrapi import Client
+from instascrape import Reel
 import os
 import re
 from datetime import datetime
 import time
 import random
 from pathlib import Path
-from config import BOT_TOKEN, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD, PROXY_URL
+import requests
+from config import BOT_TOKEN, PROXY_URL
 
 # Path configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +18,7 @@ LOG_DIR = os.path.join(BASE_DIR, 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
 
-# Create necessary directories
+# Create directories
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
@@ -32,51 +33,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add startup log message
-logger.info("Bot starting up...")
-
-# Initialize Instagram client
-cl = Client()
-cl.set_proxy(PROXY_URL)
-cl.device_settings = {
-    'app_version': '269.0.0.18.75',
-    'android_version': 29,
-    'android_release': '10.0',
-    'dpi': '420dpi',
-    'resolution': '1080x2340',
-    'manufacturer': 'samsung',
-    'device': 'SM-G973F',
-    'model': 'beyond1',
-    'cpu': 'exynos9820',
-    'version_code': '314665256'
+# Headers for Instagram requests
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://www.instagram.com",
+    "Connection": "keep-alive"
 }
-
-def initialize_instagram():
-    try:
-        logger.info(f"Attempting to login to Instagram as {INSTAGRAM_USERNAME}...")
-        
-        # Настраиваем обработку двухфакторной аутентификации
-        cl.login(
-            INSTAGRAM_USERNAME,
-            INSTAGRAM_PASSWORD,
-            verification_code=input("Enter 2FA code from Google Authenticator: ")
-        )
-        
-        try:
-            user_id = cl.user_id_from_username("instagram")
-            logger.info("Instagram login successful")
-            return True
-        except Exception as e:
-            logger.error(f"Login verification failed: {str(e)}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Login failed: {str(e)}")
-        return False
-            
-    except Exception as e:
-        logger.error(f"Login failed: {str(e)}")
-        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -100,23 +65,28 @@ async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("⏳ Начинаю загрузку Reels...")
         
-        # Extract media_pk from URL
-        media_pk = cl.media_pk_from_url(message)
-        
         # Create temp directory
         temp_dir = os.path.join(DOWNLOADS_DIR, f"temp_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(temp_dir, mode=0o755, exist_ok=True)
         
-        logger.info(f"Created temp directory: {temp_dir}")
-        
-        # Random delay
-        time.sleep(random.uniform(1, 2))
-        
         # Download video
-        video_path = cl.clip_download(media_pk, folder=temp_dir)
-        logger.info(f"Video download completed: {video_path}")
+        reel = Reel(message)
+        reel.scrape(headers=HEADERS)
+        video_url = reel.video_url
         
-        if video_path and os.path.exists(video_path):
+        # Download through proxy
+        proxies = {
+            'http': PROXY_URL,
+            'https': PROXY_URL
+        }
+        
+        response = requests.get(video_url, headers=HEADERS, proxies=proxies)
+        video_path = os.path.join(temp_dir, "reel.mp4")
+        
+        with open(video_path, 'wb') as f:
+            f.write(response.content)
+        
+        if os.path.exists(video_path):
             await update.message.reply_text("✅ Загрузка завершена, отправляю видео...")
             await update.message.reply_video(video=open(video_path, 'rb'))
             logger.info(f"Successfully sent video to user {user_id}")
@@ -145,11 +115,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     try:
-        # Initialize Instagram
-        if not initialize_instagram():
-            logger.error("Failed to initialize Instagram")
-            return
-            
         # Initialize bot
         application = Application.builder().token(BOT_TOKEN).build()
 
@@ -159,7 +124,7 @@ def main():
         application.add_error_handler(error_handler)
 
         # Start bot
-        logger.info("Bot started with Instagram API")
+        logger.info("Bot started")
         print("🤖 Бот запущен и готов к работе!")
         application.run_polling()
 
