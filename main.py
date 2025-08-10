@@ -98,16 +98,40 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Проверяем подписку при старте
-        if not await check_subscription(update, context):
+        # Создаем клавиатуру с кнопкой подписки сразу
+        keyboard = [[InlineKeyboardButton("📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_ID[1:]}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Проверяем подписку
+        user_id = update.effective_user.id
+        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        
+        # Список статусов подписки
+        member_statuses = ['member', 'administrator', 'creator']
+        
+        if chat_member.status not in member_statuses:
+            await update.message.reply_text(
+                "👋 Привет! Для использования бота необходимо подписаться на канал.\n"
+                "Нажми на кнопку ниже, подпишись и возвращайся!",
+                reply_markup=reply_markup
+            )
+            logger.info(f"User {user_id} is not subscribed to the channel")
             return
             
+        # Если пользователь подписан
         await update.message.reply_text(
             "👋 Привет! Отправь мне ссылку на Reels из Instagram, и я скачаю его для тебя."
         )
-        logger.info(f"Start command used by user {update.effective_user.id}")
+        logger.info(f"Start command used by user {user_id} - subscription verified")
+        
     except Exception as e:
         logger.error(f"Error in start command: {str(e)}")
+        # Отправляем сообщение даже при ошибке проверки
+        await update.message.reply_text(
+            "👋 Привет! Для использования бота необходимо подписаться на канал.\n"
+            "Нажми на кнопку ниже, подпишись и возвращайся!",
+            reply_markup=reply_markup
+        )
 
 async def download_reels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем подписку перед скачиванием
